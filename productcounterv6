@@ -1,0 +1,718 @@
+# PRODUCT FILE COLUMNS
+# 0.Opportunity Id	1.Opportunity: Opportunity Name	2.Created Date	3.Opportunity: Amount	4.Enabled	5.Product: Product Name	6.Hedgeye Access Status	7.Opportunity: Mass Market Status	8. Contact Full Name	9.Start Date	10.End Date	11.Opportunity: Start Date	12.Opportunity: End Date	13.Contact Email	14.Account Name ............Fields to be added 15 PromoorTrial 16.PromoCode	18. Present Last week 19. Last week amt 20. New Possible 21. New Definately 22. Lead Source
+#  OPPORTUNITY FILE COLUMNS
+# 0.Opportunity ID	1.Opportunity Name	2.Opportunity Record Type	3.Lead Source	4.Type	5.Mass Market Status	6.Created Date	7.Start Date	8.End Date	9.Amount	Stage	10.Account Name
+
+require "csv"
+require "date"
+require "selenium-webdriver"
+#require "FileUtils"  this seems to be built in to ruby 2
+
+
+#Paths and File Names
+@download_dir_firefox = "C:\\Users\\jesser\\Desktop\\downloader\\dls2" #must use these double slashes with firefox in windows
+@download_dir_windows = "c:/Users/jesser/Desktop/downloader/dls2/*"
+@count_output_file = "TESTcount_output.csv"
+@products_this_week_file = "products_this_week.csv"
+@products_last_week_file = "products_last_week.csv"
+@opportunities_this_week_file = "opportunities_this_week.csv"
+@product_list = [
+"morning_newsletter_1",
+"Real-Time Alerts",
+"Real-Time Alerts 2",
+"investing_ideas_1",
+"Daily Trading Ranges",
+"Hedgeye Investor",
+"HI2",
+"Hedgeye Risk Manager",
+"Macro (22)" ,
+"Macro (40)",
+"Retail PRO",
+"Industrials PRO",
+"internal"]
+
+@product_combos = {
+"morning_newsletter_1" => ["morning_newsletter_1"],
+"Real-Time Alerts" => ["Real-Time Alerts", "Real-Time Alerts 2"],
+"investing_ideas_1" => ["investing_ideas_1"],
+"Daily Trading Ranges" => [ "Daily Trading Ranges"],
+"Hedgeye Investor" => ["Hedgeye Investor", "HI2"],
+"Hedgeye Risk Manager" => [ "Hedgeye Risk Manager", "Macro (22)" , "Macro (40)"],
+"Retail PRO" => ["Retail PRO"],
+"Industrials PRO" =>["Industrials PRO"]
+ }
+
+
+
+
+
+@product_lookup = {}
+
+@emailbadtext = ["hedgeye.com", "example.com", "scottnelson", "mrjames", "spamcatch", "fred-strammer@comcast.net","example2.com","tvannoy", "e-xample.com", "testbigdaddy"]
+maxtriallength = 24 # the length in days of a trial. This also includes the grace period for billing. This can change at any time and mess up this whole thing. 
+
+
+
+#Data Structure Arrays and Hashes - These could be turned into a database
+pending_cancels = []
+pending_cancel_count = 0
+present_this_week = {}
+expired_cancels = []
+
+# set the column of the fields you want. Try to put this into a Class
+productcol = 5 # the product field
+emailcol = 13 # the email field
+amtcol = 3 # the amount field
+createcol = 2 #the create date field
+accstartcol = 9 #access start date field
+accendcol = 10 # access end date field
+prorticol = 15 # Promo or trial column
+opidcolumn = 0 # op id colulmn
+newpossiblecol = 20 # column in opportunity that tells possibly  new. Must run other tests to tell for sure
+leadsourcecol = 3 # column for the lead source in opportunitites
+opstatuscol = 7 #column that contains cancelled indicator. The field is typically "Updated" or "Cancelled"
+
+
+
+# set counts to zero.now that these are determined, redo as a hash
+# can also try the following x = 0 if x.nil?..................x ||=0
+hi_count = 0
+hi_leadsource = {}
+hrm_count = 0
+hrn_leadsource = {}
+hi2_count = 0
+macro22_count = 0
+macro40_count = 0
+mnl_count = 0
+combo3_count = 0
+rta_count = 0
+rta2_count = 0
+retailpro_count = 0
+whi_count = 0
+invideas_count = 0
+dtr_count = 0
+ipro_count = 0
+# internal count
+internal_count = 0
+# promo and trial counts
+dtrpromo_count = 0
+dtrtrial_count = 0
+hrmpromo_count = 0
+hrmtrial_count = 0
+retailprotrial_count = 0
+retailpropromo_count = 0
+mnlpromo_count = 0
+mnltrial_count = 0
+rtapromo_count = 0
+rta2promo_count = 0
+rtatrial_count = 0
+rta2trial_count = 0
+whipromo_count = 0
+whitrial_count = 0
+invideaspromo_count = 0
+invideastrial_count=0
+ipropromo_count = 0 
+iprotrial_count = 0
+trials = 0
+promos = 0
+newclients= 0
+
+
+newprodcounter = Hash.new(0)# hash to count quantity new for each product
+allprodcounter = Hash.new(0)
+freeprodcounter = Hash.new(0)
+trialprodcounter = Hash.new(0)
+promoprodcounter = Hash.new(0)
+compprodcounter = Hash.new(0)
+convertprodcounter = Hash.new(0)
+
+
+#@product_list.each do |productnameforcounter|
+#	allprodcounter[productnameforcounter]=0
+#	freeprodcounter[productnameforcounter]=0
+#	trialprodcounter[productnameforcounter]=0
+#	promoprodcounter[productnameforcounter]=0
+#	compprodcounter[productnameforcounter]=0
+#end
+convertcount = 0
+old_convertprodcounter = []
+changedclients = 0
+resubscribedclients = 0
+leadsource_count = {}
+product_leadsource = {}
+product_ls_counter = {}
+
+# Variable for counting cancels
+pending_cancels = []
+pending_cancel_count = 0
+present_this_week = {}
+expired_cancels = []
+
+
+
+
+
+
+
+
+
+#Classes
+class Product
+	attr_accessor :name, :count, :new, :comp, :promo, :trial, :convert, :leadsource
+	def initialize(name)
+		@name = name
+		@count = 0
+		@new = 0
+		@comp = 0
+		@promo = 0
+		@trial = 0 
+		@convert = 0
+		@leadsource = {}
+	end
+
+end
+
+
+def product_setup
+c="hrm"
+d="blabla"
+@hrm = Product.new("testhrm")
+puts instance_variable_get("@#{c}")
+
+instance_variable_set("@#{d}", Product.new("jojo"))
+
+puts @blabla.name
+
+end
+
+
+
+def download_reports
+	#Download reports from Sales Force. Because Salesforce oftens times out, you must manually ok each stage in the command window.
+	#download_dir = "C:\\Users\\jesser\\Desktop\\downloader\\dls2" # If the folder is deleted, this does not work. Need double dos slashes here.
+	profile = Selenium::WebDriver::Firefox::Profile.new
+	profile['browser.download.folderList'] = 2 #custom location
+	#profile['browser.download.dir'] = download_dir  #CONSIDER USING A CURRENT DATE IN FOLDER NAME
+	profile['browser.download.dir'] = @download_dir_firefox  #CONSIDER USING A CURRENT DATE IN FOLDER NAME
+	profile['browser.helperApps.neverAsk.saveToDisk'] = "text/csv"
+	puts "initializing driver"
+	driver = Selenium::WebDriver.for :firefox, :profile => profile
+	puts "Going to go to URL"
+	driver.navigate.to "https://login.salesforce.com/?un=XXXXXXXXXX&pw=XXXXXXXXX"  #ALERT - MUST USE SYSTEM VARIABLE HERE for un and pw THAT DOES NOT GO TO GIT HUB
+	puts "PRESS ENTER TO PROCEED xxxxxxxx -- LOGGED IN"
+	STDIN.gets()
+	#NEED TO FIGURE OUT HOW TO TELL THE FILES APART - try download time or file name or order in directory array sort
+	puts "Downloading the products Report. Press return when finished."
+	driver.navigate.to "https://na8.salesforce.com/00OC0000004uq5D?export=1&enc=UTF-8&xf=csv"   #Products Reports
+	STDIN.gets()
+	puts "Downloading the opportunity Report"
+	driver.navigate.to "https://na8.salesforce.com/00OC0000004utG4?export=1&enc=UTF-8&xf=csv"   #Opps Reports
+	puts "PRESS ENTER TO PROCEED xxxxxxxx -- Downloading of SalesForce files is complete"
+	STDIN.gets()
+	driver.quit
+end
+
+def rename_downloads
+	# Store current dir \ move to download dir \ sort by mtime to get the 2 most recent files \ save to stored current dir \ ch back to current dir
+	directory_content = Dir[@download_dir_windows]   #need to fix this.
+	directory_content.sort_by {|filename| File::mtime(filename)}
+	# Must now resave the files downloaded into the working directory
+	FileUtils.cp(directory_content[-1] , @opportunities_this_week_file) #copy the ops file to the directory where this script is running. Don't need to use FileUtil?
+	FileUtils.cp(directory_content[-2] , @products_this_week_file) #copy the prods file to the directory where this script is running. Don't need to use FileUtil?
+	puts "Files are rewritten -- Press enter to start processing"
+	STDIN.gets()
+end
+
+
+def csv_to_array(filename)
+	array = CSV.read(filename)
+	array_length = array.length() 
+	return array, array_length
+end
+
+def ok_to_proceed
+	continue = FALSE
+	puts "Enter Y to begin or N to skip to analysis"
+	start_answer = STDIN.gets()
+	start_answer.chomp!.upcase!
+	if start_answer == "Y"
+	 continue = TRUE
+	end
+	return continue
+end
+
+#############################################################
+begin
+	puts 
+	puts "DO YOU WANT TO DOWNLOAD FILES FROM SALES FORCE? Y/N"
+	download_the_files = ok_to_proceed
+	if download_the_files
+		puts "You have chosen to download files from Sales Force"
+		download_reports
+		rename_downloads
+	end
+	
+	
+	## Read in products this week
+	products, productsfilelength = csv_to_array(@products_this_week_file)
+	pending_cancels[0] = products[0] #Put in the header row for the pending cancels list
+	
+	## Read in products last week
+	previous_products, previous_productsfilelength = csv_to_array(@products_last_week_file)
+	expired_cancels[0] = previous_products[0]
+
+	# Create hashes for Last Weeks products. Amount and account length
+	previous_idhash = {'test' => "hello"}
+	previous_acclengthhash = {}
+	previous_op_present = {}
+
+	for i in (1..(previous_productsfilelength-8))  # should really test for the first blank line not use the -8. Note that it would have to check for a complete blank line as there are some lines with blank op ids in the first column
+		# last week amount
+		previous_id_field = previous_products[i][0]
+		pppamt = previous_products[i][3]
+		previous_idhash[previous_id_field] = pppamt  # the prvious weeks amount. Note the op id here is the long version
+		previous_op_present[previous_id_field] = previous_products[i]
+		# last week account length
+		lw_acc_start_field = previous_products[i][accstartcol]
+		lw_acc_end_field = previous_products[i][accendcol]
+		
+		lw_acct_length = Date.strptime(lw_acc_end_field, "%m/%d/%Y") - Date.strptime(lw_acc_start_field, "%m/%d/%Y")
+	
+		previous_acclengthhash[previous_id_field] = lw_acct_length
+	
+		# STDIN.gets()
+		# puts "#{previous_id_field}: #{previous_idhash[previous_id_field]}"
+	end
+	
+	ops = CSV.read(@opportunities_this_week_file)
+	opsfilelength = ops.length()
+	
+	all_ops_new = {'test' => "hello"}
+	all_ops_promo = {'test' => "hello"}
+	for i in (1..(opsfilelength-7))
+		opsidfield = ops[i][0]
+		newfield = ops[i][4] 
+		promocodefield = ops[i][3]
+		#puts "#{opsidfield}   #{newfield}   #{promocodefield}"
+	
+		# Create some hashes
+		all_ops_new[opsidfield] = newfield
+		all_ops_promo[opsidfield] = promocodefield #will have to create an array or hash  in the products file loop to count each kind of these. Or use the hash to set an array of the promos
+	
+	end
+	
+	
+	
+	#MASTER PRODUCTS LOOP
+for i in (1..productsfilelength-8) # could also use an each with a  do with a block. try that next. also check on what the first line is the file is. Try with just 2 dots but adjust the products file length
+	productfield = products[i][productcol] # this should be moved down after the valid check change
+	emailfield = products[i][emailcol]
+	amtfield = products[i][amtcol] # think about converting this to either an integer or floating point number rather then a string. That way it will catch both the 0.00 from sales force and the 0 from an excel generated csv
+	fullopid = products[i][opidcolumn] #there are 3 extra character in this compared to my last opportunity report. The last one did not do this
+	create_date = products[i][createcol]
+	if fullopid !=nil; op_id_field = fullopid.chop.chop.chop; end# remove these 3 characters
+	acc_start_field = products[i][accstartcol]
+	acc_end_field = products[i][accendcol]
+	opp_status = products[i][opstatuscol]
+	
+	#lw_acc_start_field = previous_products[i][accstartcol]
+	#lw_acc_end_field = previous_products[i][accendcol]
+	
+	
+	leadsource = all_ops_promo[op_id_field]
+	# puts "amt field: #{amtfield}"
+	internaluserflag = false
+	promoflag = false
+	trialflag = false
+	convertflag = false
+	legacy_user_flag = false
+	# STDIN.gets()
+	# puts productfield 
+	# puts i
+	# If loops to check for each product and increment the product counters. This should be changed to a for each loop using some kind of array of product names. also try using the percent sign to form the variable names
+	# Add test if internal or some other banned name or email: example.com hedgeye.com mrjames scott smith
+	# Add test for 0 dollar amount for promos and trials
+	# Add test for promo period to tell if promo or trial
+	# add combiner for HRM and HI. Here or after this process
+	# there probably is a faster way to do this using and each loop on an array
+	
+	# CHECK FOR INTERNAL USER
+	@emailbadtext.each do |bademail|
+		if emailfield == nil  #not sure if there are implications of doing this. probably should think more about this and the conditional loops below
+			emailfield = "blank"
+		end 
+		
+		if emailfield.include?(bademail)
+			internaluserflag = true
+			#puts "Internal Found" 
+			#puts emailfield 
+			#STDIN.gets()
+		end
+	end
+	
+	# if invalid change the product to internal.
+	if internaluserflag == true
+		products[i][productcol] = "internal"
+		productfield = "internal" # if the productfield definition is moved down, this is no longer needed. must change in promo check as well
+		internal_count += 1
+	end
+	
+	
+	# CHECK IF A PROMO OR TRIAL. ATTEMPT TO SHOW THE DIFFERENCE. this will change is a promo code field is introduced
+	
+	
+	#if emailfield.include?("barrycassese")
+	#	puts "#{emailfield} #{amtfield}"
+	#	STDIN.gets()
+	#end
+	
+	
+
+# Legacy User Test - Not currently using
+	if create_date == "8/18/2012" # detect if this is one of the users left from the 8/18/12 transfer. Many of these have blank opp amt fields which can mess up many queries.
+		legacy_user_flag = true
+		#puts "#{emailfield} #{create_date} #{amtfield}"
+		#STDIN.gets()
+	end
+	
+# Detect Trials and Promos: Opt Amt = $0	
+	if amtfield == "0.00" and productfield != "internal"   # SOMETIMES THE AMT is 0 and SOMETIME 0.00. This happens if the file was opened in excel befor processing.
+		
+		date_diff = Date.strptime(acc_end_field, "%m/%d/%Y") - Date.strptime(acc_start_field, "%m/%d/%Y")
+		if date_diff == maxtriallength
+			products[i][prorticol] = "trial"
+			trials = trials +1
+			trialflag = true	
+		else
+			products[i][prorticol] = "promo"
+			promos = promos + 1
+			promoflag = true
+			#puts "TRIAL FOUND #{emailfield} #{productfield} #{date_diff}"
+			#puts Date.strptime(acc_end_field, "%m/%d/%Y")
+			#puts Date.strptime(acc_start_field, "%m/%d/%Y")
+			#STDIN.gets()
+		end
+	end
+	
+	
+	# puts "Is it new before loop #{products[i][21]}"
+	# puts "new count: #{newclients}"
+	# STDIN.gets
+	
+	
+	# CHECK FOR NEW ONES
+	# (Op Id NOT present in last weeks report) AND (this week Op Amt >$0 and not blank)
+	# OR
+	# (Last Week Op Amt = $0 and not blank) AND (this week opt Amt > $0 and not blank)
+	# Test this method---Try just This week array of ops - last week array of ops  for potentiial news then run tests
+	if productfield != "internal" and promoflag == false and trialflag == false      # Not internal, trial or promo
+		previousweekamt = previous_idhash[fullopid].to_s # think about converting this to either andinteger or floating point number rather then a string. That way it will catch both the 0.00 from sales force and the 0 from an excel generated csv
+		previousweekpresent = previous_op_present[fullopid]
+		# puts products[i][0]
+		# puts "Email: #{emailfield} Current amt: #{amtfield}  Previous: #{previousweekamt}   All Ops new: #{all_ops_new[op_id_field]}"
+		#if products[i][0] == "006C000000gohzIIAQ"
+		#	
+		#	previousweekamt.each_byte do |c|
+		#		puts c
+		#	end
+		#	STDIN.gets()
+		#end
+		
+		
+		#if all_ops_new[op_id_field]  == "New" and previousweekamt.empty?  #previous_idhash[fullopid] == nil  and  all_ops_new[op_id_field]  == "New" # check if present in previous week (indicateded by nil in last week amt) and op type is new
+		if previousweekpresent.nil? and amtfield !=""  # must check if the previous week op id exists it is possible that there the previous week amt if empty but there is a previous week op id record
+				#puts "ITS NEW #{productfield} #{fullopid} #{previousweekamt} #{previousweekpresent}"
+				#puts products[i][emailcol]
+				#STDIN.gets()
+			products[i][21] = "New" # mark current record as new definately
+		elsif previousweekamt == "0.00" and amtfield !="" and amtfield != "0.00" # and all_ops_new[op_id_field]  == "New"   
+		# last week amt is 0. I thought you also needed to check if the op type field was new, but if a product amt was 0 last week and then got to >0 this week (or possibly blank) then it should be considered new. 
+		# Sometime the system says they are resubscribe if they were an old lapsed subscriber who then did a trial or promo
+			products[i][21] = "New" # mark current record as new definately
+			convertflag = true
+			
+				#puts "ITS NEW #{productfield}"
+				#puts products[i][emailcol]
+				#STDIN.gets()
+			
+		end
+	end
+	
+	
+	# Count the products. This could be a nice hash now that it works. But I am too tired to convert it.
+	if promoflag == false and trialflag == false
+	#puts productfield
+	#puts allprodcounter[productfield]
+		allprodcounter[productfield] += 1
+	elsif promoflag == true and trialflag == false
+		freeprodcounter[productfield] += 1
+	elsif promoflag == false and trialflag == true
+		trialprodcounter[productfield] += 1
+	elsif promoflag == true and trialflag == true
+		puts "PROMO TRIAL FLAG ERROR"
+	end
+	
+	
+	# COUNT THE LEAD SOURCES
+	if leadsource != nil and productfield != "internal" and (promoflag or trialflag) == true
+		if not leadsource.empty?
+			#puts product_ls_counter
+			leadsource_count[leadsource] = 0 if leadsource_count[leadsource].nil?
+			leadsource_count[leadsource] +=1
+			product_leadsource[productfield] = 0 if product_leadsource[productfield].nil?
+			product_leadsource[productfield] += 1
+			#puts leadsource_count
+			#puts product_leadsource
+			
+			unless defined? (product_ls_counter[leadsource][productfield])
+				#puts "*******************************************************"
+				#puts "STOP  FULL promo code its nil #{leadsource}"
+				product_ls_counter[leadsource] = {productfield=>0}
+			else
+				if product_ls_counter[leadsource][productfield].nil?
+					product_ls_counter[leadsource][productfield]=0
+				end
+			end
+					
+			product_ls_counter[leadsource][productfield] += 1
+			
+			if leadsource.downcase.include? "comp"
+				compprodcounter[productfield] += 1
+			else
+				promoprodcounter[productfield] += 1
+			
+			end
+			#puts product_ls_counter
+	
+		end
+	end
+	
+	
+	
+	# COUNT THE NEW. CHECK IF DEFINATELY NEW IS SET. (CAN ALSO ADD CHANGED AND RESUB LATER)
+	if products[i][21] == "New"
+		newclients += 1
+		if newprodcounter[productfield].nil?
+			newprodcounter[productfield] = 1
+		else
+			newprodcounter[productfield] += 1
+		end
+					
+	
+	#print products[i][13],   all_ops_new[op_id_field] 
+	#puts
+	# puts products[i][opidcolumn]
+	end
+	
+	# COUNT THE CONVERTS
+	if convertflag == true 
+	# increment convert counter
+		convertcount += 1
+		old_convertprodcounter[(convertcount-1)]=[productfield, leadsource, (previous_acclengthhash[fullopid].to_i)]
+		convertprodcounter[productfield] += 1
+
+		
+		
+		
+	end
+	
+	
+
+	# LIST THE PENDING CANCELS
+	if opp_status == "Cancelled"
+		pending_cancel_count += 1
+		pending_cancels << products[i]
+	end
+	
+	# Make a simple hash of the products opids to use later to check for activated cancels/expires
+	present_this_week[fullopid] = true
+	
+
+	
+	
+	
+end
+#END OF THE MASTER LOOP
+
+
+#CREATE LIST OF THOSE PRESENT LAST WEEK THAT ARE NOT PRESENT THIS WEEK
+
+#puts present_this_week
+#STDIN.gets()
+previous_op_present.each_key do |op_id|
+	if present_this_week[op_id].nil? 
+		expired_cancels << previous_op_present[op_id]
+		
+		
+	end
+		
+
+end
+
+######################################################################
+
+# Output to a csv
+
+	CSV.open(@count_output_file, "wb") do |csv|
+	csv << ["RAW UNTOTALED COUNTS"]
+	raw_total = 0
+	allprodcounter.each do |rawprod, rawcount|
+		csv << [rawprod, rawcount]
+		raw_total += rawcount
+	end
+	csv << ["TOTAL RAW", raw_total]
+	
+	csv << []
+	csv << ["PAYING PRODUCT COUNTS"]
+	prod_total = 0 
+	@product_combos.each do |name, sublist|
+		prod_sum = 0
+		sublist.each do |subprod|
+			prod_sum += allprodcounter[subprod]
+		end
+		csv << [name, prod_sum]
+		prod_total += prod_sum
+	end
+	csv << ["TOTAL PAYING", prod_total]
+	
+	csv << []
+	csv << ["NEW PRODUCTS"]
+	new_total = 0 
+	@product_combos.each do |name, sublist|
+		prod_sum = 0
+		sublist.each do |subprod|
+			prod_sum += newprodcounter[subprod]
+		end
+		csv << [name, prod_sum]
+		new_total += prod_sum
+	end
+	csv << ["TOTAL NEW", new_total]
+	
+	csv << []
+	csv << ["COMP PRODUCTS"]
+	comp_total = 0 
+	@product_combos.each do |name, sublist|
+		prod_sum = 0
+		sublist.each do |subprod|
+			prod_sum += compprodcounter[subprod]
+		end
+		csv << [name, prod_sum]
+		comp_total += prod_sum
+	end
+	csv << ["TOTAL COMPS", comp_total]
+	
+	csv << []
+	csv << ["PROMO PRODUCTS"]
+		promo_total = 0 
+	@product_combos.each do |name, sublist|
+		prod_sum = 0
+		sublist.each do |subprod|
+			prod_sum += promoprodcounter[subprod]
+		end
+		csv << [name, prod_sum]
+		promo_total += prod_sum
+	end
+	csv << ["TOTAL PROMOS", promo_total]
+	
+	csv << []
+	csv << ["TRIAL PRODUCTS"]
+		trial_total = 0 
+	@product_combos.each do |name, sublist|
+		prod_sum = 0
+		sublist.each do |subprod|
+			prod_sum += trialprodcounter[subprod]
+		end
+		csv << [name, prod_sum]
+		trial_total += prod_sum
+	end
+	csv << ["TOTAL TRIALS", trial_total]	
+	
+	csv << []
+	csv << ["LEAD SOURCE SUMMARY"]
+	leadsource_count.each do |lsource, lproductcount|
+			csv << [lsource, lproductcount] 
+	end
+	csv << []
+	csv << ["LEAD SOURCE BREAKOUT"]
+	product_ls_counter.each do |lsource, lproductcount|
+		csv << [lsource.upcase]
+		lproductcount.keys.each do |subkey|  
+			csv << [subkey, lproductcount[subkey]]
+		end
+	end
+
+	csv << []
+	csv << ["CONVERTED PRODUCTS"]
+	
+
+	convert_total = 0 
+	@product_combos.each do |name, sublist|
+		prod_sum = 0
+		sublist.each do |subprod|
+			prod_sum += convertprodcounter[subprod]
+		end
+		csv << [name, prod_sum]
+		convert_total += prod_sum
+	end
+	
+	
+	
+	
+	
+	
+	
+	
+	csv << ["TOTAL CONVERTS", convert_total]
+	csv << []
+	csv << ["CONVERTED BREAKOUT"]
+	csv << ["Product", "Lead Source", "Length of Promo"]
+	old_convertprodcounter.each do |cproduct, cproductcount, clength|
+		csv << [cproduct, cproductcount,clength]
+	end
+	
+	
+	
+	
+	csv << []
+	csv << ["INTERNAL PRODUCT COUNTS"]
+	csv << ["TOTAL INTERNAL or SPECIAL", internal_count]
+	csv << []
+	csv << []
+	csv << ["NOT YET EXPIRED CANCELS - please check in Salesforce before taking any action"]
+	pending_cancels.each do |pc0, pc1, pc2, pc3, pc4, pc5, pc6, pc7, pc8, pc9, pc10, pc11, pc12, pc13, pc14|
+		csv << [pc0, pc1, pc2, pc3, pc4, pc5, pc6, pc7, pc8, pc9, pc10, pc11, pc12, pc13, pc14]
+	end
+	csv << []
+	csv << []
+	csv << ["EXPIRED CANCELS - please check in Salesforce before taking any action as users may resubscribe or switch products"]
+	expired_cancels.each do |pc0, pc1, pc2, pc3, pc4, pc5, pc6, pc7, pc8, pc9, pc10, pc11, pc12, pc13, pc14|
+		csv << [pc0, pc1, pc2, pc3, pc4, pc5, pc6, pc7, pc8, pc9, pc10, pc11, pc12, pc13, pc14]
+	end
+	
+end
+
+
+# printf( "%-40s%5d\n","TOTAL CHANGED: ", "#{changedclients}")
+
+puts
+puts "ALL FINISHED....PRESS RETURN TO EXIT"
+STDIN.gets()
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+
+end
+
